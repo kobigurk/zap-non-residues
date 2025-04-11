@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Residue Wrangler</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        /* CSS unchanged */
+        * { box-sizing: border-box; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #000; color: #fff; font-family: 'Press Start 2P', cursive; image-rendering: pixelated; }
+        #main-container { display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; padding: 5px; }
+        #game-container { position: relative; border: 3px solid #0f0; background-color: #111; box-shadow: 0 0 10px #0f0; overflow: hidden; max-width: 100%; max-height: 100%; }
+        canvas { display: block; background-color: transparent; max-width: 100%; max-height: 100%; }
+        #ui-container { position: absolute; top: 5px; left: 5px; right: 5px; display: flex; justify-content: space-between; font-size: clamp(10px, 2.5vw, 14px); z-index: 10; pointer-events: none; text-shadow: 1px 1px #000; }
+        #score { color: #ff0; } #witness { color: #0ff; } #lives { color: #f00; }
+        #start-screen, #game-over-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.85); display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 100; padding: 10px; }
+        #start-screen h1, #game-over-screen h1 { font-size: clamp(18px, 5vw, 24px); color: #0f0; margin-bottom: 10px; text-shadow: 2px 2px #050; }
+        #start-screen p, #game-over-screen p { font-size: clamp(9px, 2vw, 11px); line-height: 1.4; margin-bottom: 15px; max-width: 90%; }
+        .explanation { color: #ccc; font-style: italic; margin-bottom: 15px !important; }
+        .controls-info { color: #0ff; }
+        .button { margin-top: 10px; font-family: 'Press Start 2P', cursive; background-color: #0f0; color: #000; border: 2px solid #fff; padding: clamp(6px, 2vw, 10px) clamp(12px, 3vw, 20px); font-size: clamp(10px, 3vw, 14px); cursor: pointer; box-shadow: 3px 3px #050; transition: all 0.1s ease; }
+        .button:active { transform: translate(2px, 2px); box-shadow: 1px 1px #050; }
+        #mobile-controls { display: none; position: absolute; bottom: 0; left: 0; width: 100%; height: 15%; min-height: 60px; z-index: 20; pointer-events: none; }
+        .mobile-button { position: absolute; bottom: 5%; width: 55px; height: 55px; background-color: rgba(0, 255, 0, 0.25); border: 2px solid rgba(0, 255, 0, 0.7); border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 20px; color: #fff; user-select: none; pointer-events: auto; }
+        #mobile-left { left: 10%; transform: translateX(-50%); } #mobile-right { right: 10%; transform: translateX(50%); }
+        #mobile-zap { left: 50%; transform: translateX(-50%); width: 65px; height: 65px; background-color: rgba(0, 255, 255, 0.3); border-color: rgba(0, 255, 255, 0.7); }
+        @media (hover: none) and (pointer: coarse) { #mobile-controls { display: block; } }
+    </style>
+</head>
+<body>
+    <div id="main-container">
+        <div id="game-container">
+            <canvas id="gameCanvas"></canvas>
+            <div id="ui-container">
+                <div id="score">Score: 0</div>
+                <div id="witness">Witness: 10</div>
+                <div id="lives">Lives: 3</div>
+            </div>
+            <div id="start-screen">
+                <h1>Residue Wrangler</h1>
+                <p class="explanation">Catch falling Miller Loop outputs!</p>
+                <p>✅ Steady CIRCLES are correct 'Residues'. Catch them and let them drop automatically (DO NOT ZAP!).</p>
+                <p>✅ Flashing SQUARES are 'Non-Residues'. Catch them and quickly ZAP (Space/⚡) before they drop!</p>
+                <p><strong style="color:#ff0;">TIP:</strong> Catching a SQUARE forces caught CIRCLES to drop!</p>
+                <p>COST: Zapping uses <span style="color:#0ff;">Witness</span> energy (regenerates slowly).</p>
+                <p>❌ Don't miss objects! Don't zap Circles! Don't let Squares drop unzapped!</p>
+                <p class="controls-info">Move: ← → / Side Buttons | Zap: Spacebar / Center ⚡ Button</p>
+                <button class="button" id="start-button">Start Game</button>
+            </div>
+            <div id="game-over-screen" style="display: none;">
+                <h1>Game Over!</h1>
+                <p>Final Score: <span id="final-score">0</span></p>
+                <button class="button" id="restart-button">Play Again</button>
+            </div>
+            <div id="mobile-controls">
+                <div class="mobile-button" id="mobile-left">◀</div>
+                <div class="mobile-button" id="mobile-zap">⚡</div>
+                <div class="mobile-button" id="mobile-right">▶</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Elements --- (Same)
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameContainer = document.getElementById('game-container');
+        const scoreElement = document.getElementById('score');
+        const witnessElement = document.getElementById('witness');
+        const livesElement = document.getElementById('lives');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const startButton = document.getElementById('start-button');
+        const restartButton = document.getElementById('restart-button');
+        const finalScoreElement = document.getElementById('final-score');
+        const mobileControls = document.getElementById('mobile-controls');
+        const mobileLeft = document.getElementById('mobile-left');
+        const mobileRight = document.getElementById('mobile-right');
+        const mobileZap = document.getElementById('mobile-zap');
+
+        // --- Settings --- (Same)
+        let PADDLE_WIDTH = 80; let PADDLE_HEIGHT = 15; let PADDLE_SPEED = 7;
+        let OBJECT_SIZE = 20; let OBJECT_FALL_SPEED_START = 1.2;
+        const OBJECT_SPAWN_RATE_START = 120; const WITNESS_REGEN_RATE = 0.015;
+        const ZAP_COST = 1; const CATCH_TIME_LIMIT = 0.8;
+
+        // --- State --- (Same)
+        let score = 0; let lives = 3; let witness = 10;
+        let paddleX; let objects = []; let frameCount = 0;
+        let keys = {}; let touchLeft = false; let touchRight = false; let touchZap = false;
+        let animationFrameId; let lastUpdateTime = 0;
+        let objectFallSpeed = OBJECT_FALL_SPEED_START; let objectSpawnRate = OBJECT_SPAWN_RATE_START;
+        let gameState = 'START';
+        let showTips = true; let tipMessage = ""; let tipTimer = 0;
+        const TIP_DURATION = 2.5; let firstCircleSpawned = false;
+        let firstSquareSpawned = false; let firstZapNeeded = false;
+
+        // --- Dynamic Sizing ---
+        function resizeCanvas() { /* ... (same) ... */
+            const containerPadding = 10; const availableWidth = window.innerWidth - containerPadding;
+            const availableHeight = window.innerHeight - containerPadding;
+            const maxWidth = 700; const maxHeight = 900;
+            let targetWidth = Math.min(maxWidth, availableWidth);
+            let targetHeight = Math.min(maxHeight, availableHeight * 0.9);
+            targetWidth = Math.min(targetWidth, targetHeight * 3 / 2);
+            canvas.width = Math.floor(targetWidth); canvas.height = Math.floor(targetHeight);
+            gameContainer.style.width = `${canvas.width}px`; gameContainer.style.height = `${canvas.height}px`;
+            PADDLE_WIDTH = Math.max(60, canvas.width * 0.15); PADDLE_HEIGHT = Math.max(10, canvas.height * 0.03);
+            OBJECT_SIZE = Math.max(15, canvas.width * 0.04); PADDLE_SPEED = Math.max(5, canvas.width * 0.012);
+            objectFallSpeed = OBJECT_FALL_SPEED_START * (canvas.height / 400);
+            if (gameState === 'START' || gameState === 'GAMEOVER') { paddleX = (canvas.width - PADDLE_WIDTH) / 2; }
+            else { paddleX = Math.max(0, Math.min(paddleX, canvas.width - PADDLE_WIDTH)); }
+        }
+
+        // --- Drawing Functions ---
+        function drawPaddle() { /* ... (same) ... */
+             ctx.fillStyle = '#0f0';
+             ctx.fillRect(paddleX, canvas.height - PADDLE_HEIGHT * 1.5, PADDLE_WIDTH, PADDLE_HEIGHT);
+             ctx.strokeStyle = '#fff';
+             ctx.strokeRect(paddleX, canvas.height - PADDLE_HEIGHT * 1.5, PADDLE_WIDTH, PADDLE_HEIGHT);
+        }
+        function drawObjects() { /* ... (same) ... */
+             objects.forEach(obj => {
+                 ctx.fillStyle = obj.isResidue ? '#0ff' : '#ff0'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+                 if (obj.isResidue) { ctx.beginPath(); ctx.arc(obj.x + OBJECT_SIZE / 2, obj.y + OBJECT_SIZE / 2, OBJECT_SIZE / 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+                 else { if (frameCount % 10 < 5) { ctx.fillRect(obj.x, obj.y, OBJECT_SIZE, OBJECT_SIZE); ctx.strokeRect(obj.x, obj.y, OBJECT_SIZE, OBJECT_SIZE); } else { ctx.fillStyle = '#aa0'; ctx.fillRect(obj.x, obj.y, OBJECT_SIZE, OBJECT_SIZE); } }
+                 if (obj.zapped) { drawZapEffect(obj.x + OBJECT_SIZE / 2, obj.y + OBJECT_SIZE / 2); } });
+        }
+        function drawZapEffect(x, y) { /* ... (same) ... */
+             ctx.fillStyle = 'rgba(255, 255, 0, 0.7)';
+              for (let i = 0; i < 5; i++) { const angle = Math.random() * Math.PI * 2; const dist = Math.random() * (OBJECT_SIZE*0.75); const size = Math.random() * (OBJECT_SIZE*0.15) + 1; ctx.fillRect(x + Math.cos(angle) * dist - size / 2, y + Math.sin(angle) * dist - size / 2, size, size); }
+        }
+        function drawUI() { /* ... (same) ... */
+             scoreElement.textContent = `Score: ${score}`; witnessElement.textContent = `Witness: ${Math.floor(witness)}`; livesElement.textContent = `Lives: ${lives}`;
+        }
+        function drawTips(deltaTime) { /* ... (same) ... */
+             if (!showTips || tipMessage === "") return;
+             tipTimer += deltaTime;
+             if (tipTimer < TIP_DURATION) {
+                 ctx.save(); ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+                 ctx.font = `clamp(10px, ${canvas.width * 0.03}px, 12px) 'Press Start 2P'`;
+                 const textMetrics = ctx.measureText(tipMessage); const textWidth = textMetrics.width;
+                 const textHeight = parseInt(ctx.font); const x = (canvas.width - textWidth) / 2;
+                 const y = canvas.height * 0.25;
+                 ctx.fillRect(x - 10, y - textHeight, textWidth + 20, textHeight + 10);
+                 ctx.fillStyle = "#fff"; ctx.textAlign = "center";
+                 ctx.fillText(tipMessage, canvas.width / 2, y);
+                 ctx.restore();
+             } else { tipMessage = ""; tipTimer = 0; }
+         }
+
+        // --- Update Functions ---
+        // --- MODIFIED: updateObjects ---
+        function updateObjects(deltaTime) {
+            // Iterate backwards to allow safe removal during iteration
+            for (let i = objects.length - 1; i >= 0; i--) {
+                const obj = objects[i];
+
+                if (obj.caught) {
+                    // Keep object on paddle
+                    obj.x = paddleX + (PADDLE_WIDTH / 2) - (OBJECT_SIZE / 2);
+                    obj.y = canvas.height - PADDLE_HEIGHT * 1.5 - OBJECT_SIZE;
+                    obj.catchTimer += deltaTime;
+
+                    // Trigger Zap Tip
+                    if (showTips && !obj.isResidue && !firstZapNeeded) {
+                         tipMessage = "Zap the Square! (Space/⚡)";
+                         tipTimer = 0;
+                         firstZapNeeded = true;
+                    }
+
+                    // Check if catch time expires
+                    if (obj.catchTimer >= CATCH_TIME_LIMIT) {
+                        if (!obj.isResidue) { // Dropped a non-residue (penalty)
+                            score -= 5;
+                            logMessage(`Score -5 (Dropped Square), Score: ${score}`);
+                        } else { // Correctly dropped a residue
+                             score += 5;
+                             logMessage(`Score +5 (Dropped Circle Timer), Score: ${score}`);
+                        }
+                        obj.caught = false; // Let it start falling
+                        obj.catchTimer = 0;
+                        obj.y += PADDLE_HEIGHT * 0.5; // Nudge down
+                    }
+                } else if (obj.zapped) {
+                     // Handle zap effect timer
+                     obj.zapTimer = (obj.zapTimer || 0) + deltaTime;
+                     if (obj.zapTimer > 0.2) {
+                         objects.splice(i, 1); // Remove after effect
+                         continue; // Skip rest of checks for this removed object
+                     }
+                } else {
+                    // Fall normally (if not caught and not zapped)
+                    obj.y += objectFallSpeed * (60 * deltaTime);
+                }
+
+                // --- MODIFIED Floor Collision Check ---
+                // Check only if not caught and not currently being zapped
+                if (!obj.caught && !obj.zapped) {
+                    const paddleTop = canvas.height - PADDLE_HEIGHT * 1.5; // Define paddle top for clarity
+                    // Check if object is below the paddle's top edge before checking floor collision
+                    if (obj.y > paddleTop) {
+                        if(obj.y + OBJECT_SIZE > canvas.height + 5) { // If object bottom is past canvas bottom
+                            logMessage(`Object hit floor. Type: ${obj.isResidue ? 'Circle' : 'Square'}, WasCaught: ${obj.wasCaught}`);
+
+                            // --- FIX: Only penalize if it was NEVER caught ---
+                            if (!obj.wasCaught) {
+                                lives--;
+                                score -= 5; // Penalty ONLY for true miss
+                                logMessage(`Score -5 (Missed Floor), Lives ${lives}, Score: ${score}`);
+                            } else {
+                                logMessage(`Dropped object hit floor (No penalty). Score: ${score}`);
+                            }
+                            // --- End FIX ---
+
+                            objects.splice(i, 1); // Always remove the object
+
+                            if (lives <= 0) {
+                                transitionState('GAMEOVER');
+                                // Important: break or return here if game over to avoid processing other objects in the same frame
+                                return;
+                            }
+                            continue; // Skip other checks for this removed object
+                        }
+                    }
+                }
+                // --- END MODIFIED Floor Collision Check ---
+            } // End for loop
+        }
+        // --- END MODIFIED: updateObjects ---
+
+        // --- MODIFIED: spawnObject ---
+        function spawnObject() {
+            const x = Math.random() * (canvas.width - OBJECT_SIZE);
+            const isResidue = Math.random() > 0.5;
+            objects.push({
+                x: x, y: -OBJECT_SIZE,
+                isResidue: isResidue,
+                caught: false,
+                wasCaught: false, // <<< Initialize wasCaught flag
+                catchTimer: 0,
+                zapped: false
+            });
+            // Tip logic remains the same
+            if (showTips) {
+                if (isResidue && !firstCircleSpawned) { tipMessage = "Circles are OK! Don't Zap!"; tipTimer = 0; firstCircleSpawned = true; }
+                else if (!isResidue && !firstSquareSpawned) { tipMessage = "Flashing Square! Catch & Zap!"; tipTimer = 0; firstSquareSpawned = true; }
+            }
+        }
+        // --- END MODIFIED: spawnObject ---
+
+        function movePaddle(deltaTime) { /* ... (same) ... */
+             let moveAmount = PADDLE_SPEED * (60 * deltaTime);
+             if ((keys['ArrowLeft'] || touchLeft) && paddleX > 0) { paddleX -= moveAmount; }
+             if ((keys['ArrowRight'] || touchRight) && paddleX < canvas.width - PADDLE_WIDTH) { paddleX += moveAmount; }
+             paddleX = Math.max(0, Math.min(paddleX, canvas.width - PADDLE_WIDTH));
+        }
+
+        // --- MODIFIED: checkCollisions ---
+        function checkCollisions() {
+             objects.forEach((obj) => {
+                 if (obj.caught || obj.zapped) return;
+
+                 const paddleTop = canvas.height - PADDLE_HEIGHT * 1.5;
+                 const paddleRect = { x: paddleX, y: paddleTop, width: PADDLE_WIDTH, height: PADDLE_HEIGHT };
+                 const objRect = { x: obj.x, y: obj.y, width: OBJECT_SIZE, height: OBJECT_SIZE };
+
+                 if (objRect.x < paddleRect.x + paddleRect.width &&
+                     objRect.x + objRect.width > paddleRect.x &&
+                     objRect.y < paddleRect.y + paddleRect.height &&
+                     objRect.y + objRect.height > paddleRect.y)
+                 {
+                     if (objRect.y + objRect.height > paddleRect.y && objRect.y < paddleRect.y + paddleRect.height / 2) {
+                          obj.caught = true;
+                          obj.wasCaught = true; // <<< Set wasCaught flag here
+                          obj.catchTimer = 0;
+                          logMessage(`Caught ${obj.isResidue ? 'Circle' : 'Square'}!`);
+
+                          if (!obj.isResidue) {
+                              let droppedCircle = false;
+                              objects.forEach((otherObj) => {
+                                  if (otherObj !== obj && otherObj.caught && otherObj.isResidue) {
+                                      otherObj.caught = false;
+                                      otherObj.catchTimer = 0;
+                                      otherObj.y += PADDLE_HEIGHT * 1.5; // Nudge down
+                                      score += 5; // Score for letting residue pass
+                                      logMessage(`Circle dropped by square catch! Score +5, Score: ${score}`);
+                                      droppedCircle = true;
+                                  }
+                              });
+                          }
+                     }
+                 }
+             });
+         }
+        // --- END MODIFIED: checkCollisions ---
+
+        function handleZap() { /* ... (same) ... */
+             let didZap = false;
+             objects.forEach((obj) => {
+                 if (obj.caught) {
+                     if (witness >= ZAP_COST) {
+                         if (!obj.isResidue) { witness -= ZAP_COST; score += 10; obj.zapped = true; obj.caught = false; logMessage(`Score +10 (Zapped Square), Score: ${score}`); didZap = true; }
+                         else { witness -= ZAP_COST; score -= 10; obj.zapped = true; obj.caught = false; logMessage(`Score -10 (Zapped Circle), Score: ${score}`); didZap = true; }
+                     } else { logMessage("Not enough Witness!"); }
+                 }
+             });
+             return didZap;
+        }
+        function increaseDifficulty() { /* ... (same) ... */
+             const baseHeight = 400;
+             objectFallSpeed = (OBJECT_FALL_SPEED_START + Math.floor(score / 100) * 0.2) * (canvas.height / baseHeight);
+             objectSpawnRate = Math.max(20, OBJECT_SPAWN_RATE_START - Math.floor(score / 50) * 5);
+             if (showTips && score > 30) { showTips = false; tipMessage = ""; }
+         }
+        function logMessage(msg) { console.log(msg); }
+
+        // --- Game State Management --- (Simplified)
+        function transitionState(newState) { /* ... (same) ... */
+             logMessage(`Transitioning from ${gameState} to ${newState}`);
+             const oldState = gameState;
+             if (oldState === 'RUNNING') { cancelAnimationFrame(animationFrameId); animationFrameId = null; removeEventListeners(); }
+             gameState = newState;
+             if (newState === 'RUNNING') { resetGameState(true); startScreen.style.display = 'none'; gameOverScreen.style.display = 'none'; setupEventListeners(); lastUpdateTime = performance.now(); animationFrameId = requestAnimationFrame(gameLoop); }
+             else if (newState === 'GAMEOVER') { finalScoreElement.textContent = score; gameOverScreen.style.display = 'flex'; }
+             else if (newState === 'START') { startScreen.style.display = 'flex'; gameOverScreen.style.display = 'none'; resetGameState(true); }
+        }
+         function resetGameState(resetUI = true) { /* ... (same) ... */
+              score = 0; lives = 3; witness = 10; objects = []; frameCount = 0;
+              objectFallSpeed = OBJECT_FALL_SPEED_START * (canvas.height / 400);
+              objectSpawnRate = OBJECT_SPAWN_RATE_START;
+              paddleX = (canvas.width - PADDLE_WIDTH) / 2;
+              showTips = true; tipMessage = ""; tipTimer = 0; firstCircleSpawned = false; firstSquareSpawned = false; firstZapNeeded = false;
+              if (resetUI) { drawUI(); }
+         }
+
+        // --- Main Game Loop --- (Simplified)
+        function gameLoop(timestamp) { /* ... (same) ... */
+            if (gameState !== 'RUNNING') return;
+            const deltaTime = Math.min(0.05, (timestamp - (lastUpdateTime || timestamp)) / 1000); lastUpdateTime = timestamp;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            witness = Math.min(100, witness + WITNESS_REGEN_RATE * (60 * deltaTime));
+            frameCount++; if (frameCount >= Math.floor(objectSpawnRate)) { spawnObject(); frameCount = 0; }
+            movePaddle(deltaTime); updateObjects(deltaTime); checkCollisions();
+            drawPaddle(); drawObjects(); drawTips(deltaTime); drawUI(); increaseDifficulty();
+            if (touchZap) { if (handleZap()) { touchZap = false; } touchZap = false; }
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- Event Listeners Setup/Removal --- (Simplified)
+         function setupEventListeners() { /* ... (same) ... */
+             keys = {};
+             const keydownHandler = (e) => { keys[e.code] = true; if (e.code === 'Space' && gameState === 'RUNNING') { e.preventDefault(); handleZap(); } };
+             const keyupHandler = (e) => { keys[e.code] = false; };
+             window.addEventListener('keydown', keydownHandler); window.addEventListener('keyup', keyupHandler);
+             touchLeft = false; touchRight = false; touchZap = false;
+             const touchStartHandler = (e) => { e.preventDefault(); if (e.target === mobileLeft) touchLeft = true; if (e.target === mobileRight) touchRight = true; if (e.target === mobileZap && gameState === 'RUNNING') touchZap = true; };
+             const touchEndHandler = (e) => { e.preventDefault(); if (e.target === mobileLeft || !isTouchActive(e, mobileLeft)) touchLeft = false; if (e.target === mobileRight || !isTouchActive(e, mobileRight)) touchRight = false; };
+             mobileControls.addEventListener('touchstart', touchStartHandler); mobileControls.addEventListener('touchend', touchEndHandler); mobileControls.addEventListener('touchcancel', touchEndHandler);
+             gameContainer._eventListeners = { keydownHandler, keyupHandler, touchStartHandler, touchEndHandler };
+         }
+         function removeEventListeners() { /* ... (same) ... */
+              const listeners = gameContainer._eventListeners; if (listeners) { window.removeEventListener('keydown', listeners.keydownHandler); window.removeEventListener('keyup', listeners.keyupHandler); mobileControls.removeEventListener('touchstart', listeners.touchStartHandler); mobileControls.removeEventListener('touchend', listeners.touchEndHandler); mobileControls.removeEventListener('touchcancel', listeners.touchEndHandler); gameContainer._eventListeners = null; } touchLeft = false; touchRight = false; touchZap = false;
+         }
+         function isTouchActive(event, element) { for (let i = 0; i < event.touches.length; i++) { if (event.touches[i].target === element) return true; } return false; }
+
+        // --- Initialization ---
+        window.addEventListener('resize', resizeCanvas, false);
+        startButton.addEventListener('click', () => transitionState('RUNNING'));
+        restartButton.addEventListener('click', () => transitionState('START'));
+        startButton.addEventListener('touchend', (e) => { e.preventDefault(); transitionState('RUNNING'); });
+        restartButton.addEventListener('touchend', (e) => { e.preventDefault(); transitionState('START'); });
+
+        resizeCanvas(); // Initial sizing
+        transitionState('START'); // Set initial state
+
+    </script>
+</body>
+</html>
